@@ -1,0 +1,126 @@
+﻿
+<div class="jumbotron">
+    <h1>Emotweecon</h1>
+    <p class="lead">Vi har altså en masse følelser inden i</p>
+</div>
+
+
+
+
+<div class="row" ng-app="emotweeconApp" ng-controller="listCtrl">
+    <div class="col-md-6">
+        <div class="loading" ng-show="loading"><h1>Tænker...</h1></div>
+        <form>
+            <label></label><br />
+            <textarea name cols="40" rows="5" id="tweet-content" ng-model="tweetText"></textarea><br />
+            <input type="button" class="btn btn-default tweet-send" value="Send" ng-click="send()" />
+        </form>
+    </div>
+
+    <div class="col-md-6 ">
+        <div>
+            <div>
+                <div>
+                    <div ng-repeat="tweet in tweets" class="panel panel-default">
+                        <div class="panel-body " ng-class="tweet.emoclass" title="Score: {{tweet.EmotionScore}}">
+                            {{tweet.Text}}
+                        </div>
+                    </div>
+                </div>
+              </div>
+        </div>
+        <a href="#" class="clearTweets">Slet alt</a>
+    </div>
+</div>
+
+
+@section scripts{
+    <script src="~/Scripts/angular.min.js"></script>
+    <script>
+        var emotweeconApp = angular.module('emotweeconApp', []);
+        emotweeconApp.service('signalRSvc', ['$rootScope', function ($rootScope) {
+            var initialize = function () {
+                var connection = $.connection('/echo');
+
+                connection.received(function (data) {
+                    console.log('received from signalR:');
+                    console.log(data);
+                    $rootScope.$emit("tweetReceived", JSON.parse(data));
+                });
+                connection.start().done(function () { });
+            };
+
+            return {
+                initialize: initialize,
+            };
+        }]);
+
+        emotweeconApp.controller('listCtrl', ['$scope', '$http', 'signalRSvc', function ($scope, $http, signalRSvc) {
+            $http.get('/api/tweet').success(function (data) {
+                data.forEach(function (e) {
+                    e.emoclass = getEmotionClass(e.EmotionScore);
+                });
+                $scope.tweets = data;
+            });
+            $scope.loading = false;
+            signalRSvc.initialize();
+
+            $scope.$parent.$on("tweetReceived", function (e, message) {
+                $scope.$apply(function () {
+                    console.log('putting tweet in model collection');
+                    message.emoclass = getEmotionClass(message.EmotionScore);
+                    $scope.tweets.unshift(message);
+                    if (ga) {
+                        ga('send', 'event', 'tweet', 'analyzed', message.Emotion, message.EmotionScore);
+                    }
+
+                });
+            });
+
+            $scope.tweetText = "";
+            $scope.send = function () {
+                if ($scope.tweetText === '')return;
+                $scope.loading = true;
+                console.log('click');
+                
+                console.log($scope.tweetText);
+                $http.post('/api/tweet',{Content:$scope.tweetText}).success(function(message) {
+                    if (message) {
+                        message.emoclass = getEmotionClass(message.EmotionScore);
+                        $scope.tweets.unshift(message);
+                    }
+                    $scope.loading = false;
+                }).error(function (err){console.error(err);});
+                $scope.tweetText = "";
+                if (ga) {
+                    ga('send', 'event','tweet','send');
+                }
+                $('#tweet-content').focus();
+            }
+            $('#tweet-content').focus();
+        }]);
+        var getEmotionClass = function (emotionScore) {
+            console.log('rating score:' + emotionScore);
+            if (emotionScore < -5) return "VerySad";
+            if (emotionScore < 0) return "Sad";
+            if (emotionScore == 0.0) return "Neutral";
+            if (emotionScore < 5) return "Glad";
+            return "VeryGlad";
+        }
+    </script>
+
+
+
+
+
+
+
+
+    <script>
+        $(function () {
+            $('.clearTweets').click(function () {
+                $.ajax('/api/tweet', { type: 'DELETE', success: function () { reload(); } });
+            });
+        });
+    </script>
+}
